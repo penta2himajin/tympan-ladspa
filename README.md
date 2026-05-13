@@ -83,3 +83,4 @@ conditions.
 | Example | Description |
 |---|---|
 | [`examples/gain/`](examples/gain/) | Minimal linear-gain plugin. Smallest viable consumer of the framework. |
+| [`examples/noise-gate/`](examples/noise-gate/) | Hysteresis noise gate. Demonstrates multi-control input, per-instance state, and DSP logic factored into a pure function for unit testing. |
