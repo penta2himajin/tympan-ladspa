@@ -1,7 +1,9 @@
 # Architecture
 
 This document describes the planned architecture. Implementation has not
-begun. Details may change as design feedback accumulates.
+begun. The pre-implementation design questions have been resolved; see
+[`docs/decisions/`](decisions/README.md). Further changes that affect
+public API or invariants should be recorded as new ADRs there.
 
 ## Module layout
 
@@ -169,22 +171,18 @@ The `realtime` module provides a lock-free log queue for capturing
 diagnostic events from `run()`. A separate non-realtime thread (if the
 host permits one to be spawned during `instantiate`) drains the queue.
 
-## Open questions
+## Resolved design questions
 
-Resolved during design phase:
+Four pre-implementation questions have been settled. Each is recorded as
+an ADR under [`docs/decisions/`](decisions/README.md):
 
-- [ ] How to handle `run_adding` and `set_run_adding_gain`? These are
-  optional LADSPA APIs. Skip entirely, or expose as opt-in trait
-  methods?
-- [ ] Const generics vs. const slices for declaring ports. Const
-  generics give compile-time port count; slices allow more flexible
-  composition.
-- [ ] Should there be a derive macro (`#[derive(Plugin)]`) to reduce
-  boilerplate, or is the trait-based approach sufficient?
-- [ ] How does the framework interact with hosts that spawn multiple
-  plugin instances concurrently? LADSPA permits this; the framework
-  needs to make `instantiate` strictly per-instance with no shared
-  mutable state.
-
-These will be resolved before implementation begins. Decisions will be
-recorded in `docs/decisions/` (to be created).
+- **`run_adding` / `set_run_adding_gain`** — skipped entirely.
+  See [ADR 0001](decisions/0001-skip-run-adding.md).
+- **Port declaration shape** — `&'static [PortDescriptor]`, not const
+  generics. See [ADR 0002](decisions/0002-ports-as-const-slice.md).
+- **`#[derive(Plugin)]`** — not provided in the initial release; plugins
+  are written as hand-rolled trait impls. See
+  [ADR 0003](decisions/0003-trait-only-no-derive-macro.md).
+- **Multiple plugin instances** — handled by `Plugin: Sized` returning
+  `Self` from `instantiate`, with a framework-wide ban on global state.
+  See [ADR 0004](decisions/0004-no-global-state-multi-instance.md).
