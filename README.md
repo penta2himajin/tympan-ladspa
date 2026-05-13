@@ -11,36 +11,64 @@ Ardour, and other LADSPA-compatible processors.
 
 ## Status
 
-**Initial scope complete.** Every "In scope" item from
-[`docs/overview.md`](docs/overview.md) is in tree:
+**Intended functionality complete.** Every "In scope" item from
+[`docs/overview.md`](docs/overview.md) is implemented, and every
+non-speculative entry in
+[ADR 0005](docs/decisions/0005-ci-verification-strategy.md) (the
+tiered CI plan) is wired up:
+
+### Framework
 
 - Layer 1 — low-level LADSPA FFI ([`src/raw/`](src/raw/)).
 - Layer 2 — realtime primitives ([`src/realtime/`](src/realtime/)):
-  the [`RealtimeContext`](src/realtime/context.rs) type-level marker
-  and a lock-free [SPSC ring buffer](src/realtime/ring.rs).
-- Layer 3 — the user-facing API: [`Plugin`](src/plugin.rs) trait,
+  the [`RealtimeContext`](src/realtime/context.rs) type-level marker,
+  a lock-free [SPSC ring buffer](src/realtime/ring.rs), and a
+  [`LogSink`](src/realtime/log.rs) wrapper packaging the
+  "log from realtime, drain off-thread" pattern.
+- Layer 3 — user-facing API: [`Plugin`](src/plugin.rs) trait,
   [`Ports`](src/port.rs) with `PortDescriptor` builders, and the
   [`plugin_entry!`](src/macros.rs) declarative macro that exports a
   LADSPA `ladspa_descriptor` entry point.
-- Three reference plugins under [`examples/`](examples/): a gain, a
-  hysteresis noise gate, and a feedback delay line.
-- CI Tier 1 + Tier 2 from
-  [ADR 0005](docs/decisions/0005-ci-verification-strategy.md): every
-  PR runs fmt, clippy, build, test (MSRV 1.75 and stable), and
-  drives all three example plugins through `analyseplugin` and
-  `applyplugin` end-to-end. An `assert_no_alloc`-style integration
-  test pins `CLAUDE.md` Prohibition 1 (no heap allocation in
-  `Plugin::run`) for the gain example.
+
+### Examples
+
+Three reference plugins under [`examples/`](examples/):
+
+- [`gain/`](examples/gain/) — minimal linear gain; alloc-free
+  invariant pinned in CI.
+- [`noise-gate/`](examples/noise-gate/) — hysteresis gate;
+  multi-control + per-instance state demonstration.
+- [`delay/`](examples/delay/) — feedback delay; demonstrates
+  `LogSink` end-to-end.
+
+### CI
+
+| Tier | Checks |
+|---|---|
+| 1 | `cargo fmt --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, `cargo build/test` on `stable` and MSRV `1.75`, `nm -D` symbol audit |
+| 2 | `ladspa-sdk` integration: `analyseplugin` (metadata round-trip) and `applyplugin` (full lifecycle + numerical check) for every example; `assert_no_alloc` integration test pinning `CLAUDE.md` Prohibition 1 on `Plugin::run`; AddressSanitizer on the workspace (nightly + `-Zbuild-std`) |
+| 3 | ThreadSanitizer (nightly + `-Zbuild-std`) — validates the SPSC ring buffer's Acquire/Release ordering on the 50 000-item concurrent exchange; `cargo-deny` supply-chain hygiene (advisories + licences + bans + sources) |
 
 The framework is usable: write `impl Plugin for MyPlugin` and
 `tympan_ladspa::plugin_entry!(MyPlugin)` in a `cdylib` crate and the
 resulting `.so` loads in any LADSPA host. See
-[`examples/gain/`](examples/gain/) for the minimal recipe.
+[`examples/gain/`](examples/gain/) for the minimal recipe and
+[`docs/plugin-author-guide.md`](docs/plugin-author-guide.md) for the
+collected practical recipes (panic strategy, `UNIQUE_ID`,
+symbol visibility, realtime debugging, common pitfalls).
 
-Future work (not yet started): higher CI tiers from ADR 0005 (ASAN,
-TSAN, syscall allow-list, `criterion` benches),
-documentation site, and additional reference plugins as needs
-appear.
+### Future work
+
+The two ADR 0005 Tier 3 items not yet on CI are documented as
+deferred in the ADR itself: the `strace` syscall allow-list
+(fragile in the presence of glibc / kernel updates) and the
+`criterion` regression bench (no realtime-path baseline yet — the
+current `run()` is a thin slice iterator). Both have re-evaluation
+triggers spelled out in
+[ADR 0005 § Trigger for revisiting](docs/decisions/0005-ci-verification-strategy.md).
+A multi-plugin `cdylib` variant of `plugin_entry!` is sketched in
+[`src/macros.rs`](src/macros.rs)'s docstring; not implemented
+because no in-tree consumer currently needs it.
 
 ## Naming
 
