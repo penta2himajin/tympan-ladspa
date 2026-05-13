@@ -11,9 +11,17 @@ Ardour, and other LADSPA-compatible processors.
 
 ## Status
 
-**Design phase.** No implementation yet. See [`docs/overview.md`](docs/overview.md)
-for planned scope and [`docs/architecture.md`](docs/architecture.md) for the
-planned API design.
+**Early implementation.** The three architecture layers described in
+[`docs/architecture.md`](docs/architecture.md) are in place: the
+low-level FFI (`src/raw/`), the realtime-thread marker
+(`src/realtime/`), and the safe public API (`Plugin` trait, `Ports`,
+`plugin_entry!` macro). A working example plugin lives in
+[`examples/gain/`](examples/gain/) and is exercised end-to-end by CI
+via the LADSPA SDK's `analyseplugin` and `applyplugin` tools.
+
+See [`docs/overview.md`](docs/overview.md) for scope and
+[`docs/decisions/`](docs/decisions/) for the architectural decisions
+that shape the API.
 
 ## Naming
 
@@ -65,6 +73,13 @@ conditions.
 | Doc | Content |
 |---|---|
 | [`docs/overview.md`](docs/overview.md) | Project purpose, scope, comparison to existing implementations |
-| [`docs/architecture.md`](docs/architecture.md) | Planned API design and module layout |
+| [`docs/architecture.md`](docs/architecture.md) | API design and module layout |
 | [`docs/references.md`](docs/references.md) | LADSPA spec, PipeWire integration, prior art |
+| [`docs/decisions/`](docs/decisions/) | Architectural Decision Records |
 | [`docs/handoff-protocol.md`](docs/handoff-protocol.md) | Session handoff protocol for long-running work |
+
+## Examples
+
+| Example | Description |
+|---|---|
+| [`examples/gain/`](examples/gain/) | Minimal linear-gain plugin. Smallest viable consumer of the framework. |
