@@ -163,6 +163,7 @@ conditions.
 |---|---|
 | [`docs/overview.md`](docs/overview.md) | Project purpose, scope, comparison to existing implementations |
 | [`docs/architecture.md`](docs/architecture.md) | API design and module layout |
+| [`docs/plugin-author-guide.md`](docs/plugin-author-guide.md) | Practical recipes for writing a plugin on top of the framework |
 | [`docs/references.md`](docs/references.md) | LADSPA spec, PipeWire integration, prior art |
 | [`docs/decisions/`](docs/decisions/) | Architectural Decision Records |
 | [`docs/handoff-protocol.md`](docs/handoff-protocol.md) | Session handoff protocol for long-running work |
