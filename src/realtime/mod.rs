@@ -11,12 +11,16 @@
 //! - [`RealtimeContext`] — zero-sized type-level marker witnessing
 //!   that the caller is on the realtime thread.
 //! - [`ring`] — lock-free single-producer / single-consumer ring
-//!   buffer. Canonical use case: capturing diagnostic events from
-//!   `run` for a non-realtime drainer to consume.
+//!   buffer.
+//! - [`log`] — bounded log sink with an off-thread drainer, built on
+//!   `ring`. Packages the "send diagnostic events from realtime,
+//!   drain on a background thread" pattern from
+//!   `docs/architecture.md` § Realtime logging.
 //!
 //! [`Plugin`]: crate
 
 mod context;
+pub mod log;
 pub mod ring;
 
 pub use context::RealtimeContext;
