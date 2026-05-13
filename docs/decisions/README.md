@@ -28,3 +28,4 @@ each time.
 | [0002](0002-ports-as-const-slice.md) | Declare ports as `&'static [PortDescriptor]` | Accepted |
 | [0003](0003-trait-only-no-derive-macro.md) | Plugin authorship via trait impl, not `#[derive(Plugin)]` | Accepted |
 | [0004](0004-no-global-state-multi-instance.md) | Plugin instances are first-class; no global state | Accepted |
+| [0005](0005-ci-verification-strategy.md) | CI verification strategy and scope boundary | Accepted |
