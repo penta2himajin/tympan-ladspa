@@ -20,6 +20,18 @@
 //! ago" and always-succeeds overwrite-on-write. The two abstractions
 //! solve different problems despite the similar "ring buffer" name.
 //!
+//! # Realtime logging
+//!
+//! This example also wires up the framework's
+//! [`LogSink`](tympan_ladspa::realtime::log::LogSink) on a tiny custom
+//! event enum. When the host pushes a `Feedback` control value that
+//! exceeds the plugin's safety cap (0.95), the plugin clamps it and
+//! emits a [`DelayLogEvent::FeedbackClamped`] event from inside
+//! `run`. A background thread (spawned by `LogSink::new` during
+//! [`Plugin::instantiate`]) consumes the queue and prints to stderr.
+//! The realtime path itself stays allocation-free: `LogSink::log`
+//! forwards directly to the underlying SPSC ring's `try_push`.
+//!
 //! # Caveats
 //!
 //! - Delay-time changes between `run()` calls are sampled at the start
@@ -32,7 +44,7 @@ use tympan_ladspa::{
     plugin_entry,
     port::{PortDefault, PortDescriptor, Ports},
     raw::Data,
-    realtime::RealtimeContext,
+    realtime::{log::LogSink, RealtimeContext},
     InstantiateError, Plugin,
 };
 
@@ -41,12 +53,40 @@ use tympan_ladspa::{
 /// resized.
 const MAX_DELAY_MS: f32 = 2_000.0;
 
+/// Cap applied to the host's `Feedback` control value to avoid
+/// runaway gain on a self-resonating delay line.
+const FEEDBACK_CAP: f32 = 0.95;
+
+/// Bounded capacity of the diagnostic log queue. 64 events absorb
+/// the worst case of "feedback clamped on every `run` call for one
+/// second" with plenty of headroom at typical audio buffer rates.
+const LOG_CAPACITY: usize = 64;
+
+/// Diagnostic events emitted by the plugin from the realtime path.
+///
+/// The realtime side enqueues these into a [`LogSink`]; the off-
+/// thread drainer prints them to stderr. Plugin authors typically
+/// define their own event enum like this — a small, `Copy` type so
+/// pushing it onto the queue is a cheap memcpy.
+#[derive(Debug, Clone, Copy)]
+pub enum DelayLogEvent {
+    /// The host wrote a `Feedback` value greater than [`FEEDBACK_CAP`].
+    /// The plugin clamped the value before using it; the original
+    /// request is included for diagnostic purposes.
+    FeedbackClamped { requested: f32 },
+}
+
 /// Plugin per-instance state.
 pub struct Delay {
     sample_rate: u32,
     buffer: Vec<Data>,
     /// Index where the next input sample will be written.
     write_index: usize,
+    /// Realtime-safe sink for diagnostic events. The drainer thread
+    /// it owns is joined when this field drops, which happens when
+    /// the LADSPA host calls `cleanup` and the framework reclaims
+    /// the [`Delay`] instance.
+    logger: LogSink<DelayLogEvent>,
 }
 
 impl Plugin for Delay {
@@ -67,7 +107,7 @@ impl Plugin for Delay {
                 .with_bounds(0.0, MAX_DELAY_MS),
             PortDescriptor::control_input("Feedback")
                 .with_default(PortDefault::Middle)
-                .with_bounds(0.0, 0.95),
+                .with_bounds(0.0, FEEDBACK_CAP),
             PortDescriptor::control_input("Mix")
                 .with_default(PortDefault::Middle)
                 .with_bounds(0.0, 1.0),
@@ -81,10 +121,17 @@ impl Plugin for Delay {
         // slot of headroom even at the maximum delay.
         let max_samples = ((MAX_DELAY_MS / 1_000.0) * sample_rate as f32).ceil() as usize + 1;
         let buffer = vec![0.0; max_samples];
+        // The drainer closure runs on a background thread, so any
+        // formatting / I/O it does is fine. The realtime path never
+        // enters this closure.
+        let logger = LogSink::new(LOG_CAPACITY, |event| {
+            eprintln!("[tympan-delay] {event:?}");
+        });
         Ok(Self {
             sample_rate,
             buffer,
             write_index: 0,
+            logger,
         })
     }
 
@@ -97,7 +144,16 @@ impl Plugin for Delay {
 
     fn run(&mut self, _rt: &RealtimeContext, _frames: usize, ports: &mut Ports<'_>) {
         let delay_ms = ports.control_input(2);
-        let feedback = ports.control_input(3).clamp(0.0, 0.95);
+        let feedback_raw = ports.control_input(3);
+        let feedback = feedback_raw.clamp(0.0, FEEDBACK_CAP);
+        if feedback_raw > FEEDBACK_CAP {
+            // Realtime-safe: a bounded SPSC `try_push`. We ignore the
+            // success flag — a full queue means previous events are
+            // still pending; dropping the current one is fine.
+            let _ = self.logger.log(DelayLogEvent::FeedbackClamped {
+                requested: feedback_raw,
+            });
+        }
         let mix = ports.control_input(4).clamp(0.0, 1.0);
 
         // Convert delay time to a whole-sample offset for this run().
