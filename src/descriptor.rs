@@ -203,7 +203,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        port::{PortDescriptor, Ports},
+        port::{PortDefault, PortDescriptor, Ports},
         InstantiateError,
     };
     use core::ffi::CStr;
@@ -222,7 +222,7 @@ mod tests {
                 PortDescriptor::audio_input("In"),
                 PortDescriptor::audio_output("Out"),
                 PortDescriptor::control_input("Gain")
-                    .with_default(1.0)
+                    .with_default(PortDefault::One)
                     .with_bounds(0.0, 4.0),
             ];
             PORTS

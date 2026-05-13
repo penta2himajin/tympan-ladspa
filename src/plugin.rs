@@ -21,7 +21,7 @@ use crate::{
 /// ```rust,no_run
 /// use tympan_ladspa::{
 ///     plugin_entry,
-///     port::{PortDescriptor, Ports},
+///     port::{PortDefault, PortDescriptor, Ports},
 ///     realtime::RealtimeContext,
 ///     InstantiateError, Plugin,
 /// };
@@ -40,7 +40,7 @@ use crate::{
 ///             PortDescriptor::audio_input("In"),
 ///             PortDescriptor::audio_output("Out"),
 ///             PortDescriptor::control_input("Gain")
-///                 .with_default(1.0)
+///                 .with_default(PortDefault::One)
 ///                 .with_bounds(0.0, 4.0),
 ///         ];
 ///         PORTS

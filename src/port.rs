@@ -88,13 +88,13 @@ impl Default for PortHints {
 /// table can live in a `static` item:
 ///
 /// ```rust
-/// use tympan_ladspa::port::PortDescriptor;
+/// use tympan_ladspa::port::{PortDefault, PortDescriptor};
 ///
 /// static PORTS: &[PortDescriptor] = &[
 ///     PortDescriptor::audio_input("In"),
 ///     PortDescriptor::audio_output("Out"),
 ///     PortDescriptor::control_input("Gain")
-///         .with_default(1.0)
+///         .with_default(PortDefault::One)
 ///         .with_bounds(0.0, 4.0),
 /// ];
 /// # let _ = PORTS;
@@ -163,40 +163,13 @@ impl PortDescriptor {
         self
     }
 
-    /// Set a default value for the port.
+    /// Declare a default value for the port.
     ///
-    /// LADSPA's default-value scheme is restricted: only the four
-    /// literal values `0.0`, `1.0`, `100.0`, and `440.0` map to
-    /// dedicated descriptor bits. Other numeric values cannot be
-    /// expressed in LADSPA's hint vocabulary; for those, document the
-    /// intended default elsewhere (for instance in
-    /// [`Plugin::NAME`](crate::Plugin::NAME) text) and rely on the
-    /// host's `MIDDLE` default behaviour or use
-    /// [`with_default_symbolic`](Self::with_default_symbolic).
-    pub const fn with_default(mut self, value: f32) -> Self {
-        let bits = if value == 0.0 {
-            HINT_DEFAULT_0
-        } else if value == 1.0 {
-            HINT_DEFAULT_1
-        } else if value == 100.0 {
-            HINT_DEFAULT_100
-        } else if value == 440.0 {
-            HINT_DEFAULT_440
-        } else {
-            0
-        };
-        self.hints.descriptor |= bits;
-        self
-    }
-
-    /// Set a symbolic default value relative to the port's bounds.
-    ///
-    /// Hosts interpret the [`SymbolicDefault`] variants according to
-    /// the LADSPA spec: `Minimum` and `Maximum` map to the literal
-    /// bounds, while `Low`, `Middle`, and `High` interpolate between
-    /// them in a host-defined way (typically the lower, middle, and
-    /// upper quartile respectively).
-    pub const fn with_default_symbolic(mut self, default: SymbolicDefault) -> Self {
+    /// LADSPA's hint scheme can only express nine specific defaults
+    /// (the variants of [`PortDefault`]). The framework therefore
+    /// takes an enum instead of an arbitrary `f32`: the API is then
+    /// exact rather than silently dropping unrepresentable values.
+    pub const fn with_default(mut self, default: PortDefault) -> Self {
         self.hints.descriptor |= default.bits();
         self
     }
@@ -247,14 +220,16 @@ impl PortDescriptor {
     }
 }
 
-/// Symbolic default values supported by LADSPA's hint scheme.
+/// Default-value variants supported by LADSPA's hint scheme.
 ///
-/// Use these with
-/// [`PortDescriptor::with_default_symbolic`](PortDescriptor::with_default_symbolic)
-/// when the desired default is best expressed relative to the port's
-/// bounds rather than as a literal number.
+/// LADSPA expresses a port's default in one of nine ways: four
+/// literal numeric values, four positions relative to the port's
+/// declared bounds, and one "lower quartile" position. Pass a
+/// `PortDefault` to [`PortDescriptor::with_default`] to set the
+/// default. Plugins that need a default not in this list must
+/// document it elsewhere — LADSPA's hint scheme cannot encode it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum SymbolicDefault {
+pub enum PortDefault {
     /// `LADSPA_HINT_DEFAULT_MINIMUM` — default is the lower bound.
     Minimum,
     /// `LADSPA_HINT_DEFAULT_LOW` — approximately the lower quartile of
@@ -268,9 +243,17 @@ pub enum SymbolicDefault {
     High,
     /// `LADSPA_HINT_DEFAULT_MAXIMUM` — default is the upper bound.
     Maximum,
+    /// `LADSPA_HINT_DEFAULT_0` — literal `0`.
+    Zero,
+    /// `LADSPA_HINT_DEFAULT_1` — literal `1`.
+    One,
+    /// `LADSPA_HINT_DEFAULT_100` — literal `100`.
+    Hundred,
+    /// `LADSPA_HINT_DEFAULT_440` — literal `440` (concert pitch in Hz).
+    Hz440,
 }
 
-impl SymbolicDefault {
+impl PortDefault {
     pub(crate) const fn bits(self) -> raw::PortRangeHintDescriptor {
         match self {
             Self::Minimum => raw::HINT_DEFAULT_MINIMUM,
@@ -278,6 +261,10 @@ impl SymbolicDefault {
             Self::Middle => raw::HINT_DEFAULT_MIDDLE,
             Self::High => raw::HINT_DEFAULT_HIGH,
             Self::Maximum => raw::HINT_DEFAULT_MAXIMUM,
+            Self::Zero => HINT_DEFAULT_0,
+            Self::One => HINT_DEFAULT_1,
+            Self::Hundred => HINT_DEFAULT_100,
+            Self::Hz440 => HINT_DEFAULT_440,
         }
     }
 }
@@ -433,7 +420,7 @@ mod tests {
             PortDescriptor::audio_input("In"),
             PortDescriptor::audio_output("Out"),
             PortDescriptor::control_input("Gain")
-                .with_default(1.0)
+                .with_default(PortDefault::One)
                 .with_bounds(0.0, 4.0),
         ];
 
@@ -461,11 +448,11 @@ mod tests {
     }
 
     #[test]
-    fn non_literal_default_silently_drops_to_no_hint() {
-        let p = PortDescriptor::control_input("Q").with_default(0.707);
+    fn literal_default_encodes_correctly() {
+        let p = PortDescriptor::control_input("Freq").with_default(PortDefault::Hz440);
         assert_eq!(
             p.hints().descriptor & raw::HINT_DEFAULT_MASK,
-            raw::HINT_DEFAULT_NONE,
+            raw::HINT_DEFAULT_440,
         );
     }
 
@@ -473,7 +460,7 @@ mod tests {
     fn symbolic_default_encodes_correctly() {
         let p = PortDescriptor::control_input("Q")
             .with_bounds(0.0, 1.0)
-            .with_default_symbolic(SymbolicDefault::Middle);
+            .with_default(PortDefault::Middle);
         assert_eq!(
             p.hints().descriptor & raw::HINT_DEFAULT_MASK,
             raw::HINT_DEFAULT_MIDDLE,
