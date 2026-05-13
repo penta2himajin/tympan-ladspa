@@ -92,11 +92,6 @@ impl RealtimeContext {
     /// `pthread_self` cache, neither of which is appropriate here.
     ///
     /// [`Plugin`]: crate
-    // The framework's FFI shim (still unimplemented) is the only
-    // production caller. Until that lands, only the unit tests
-    // exercise this constructor. `#[allow(dead_code)]` will be
-    // removed when `src/entry.rs` is wired up.
-    #[allow(dead_code)]
     pub(crate) fn new() -> Self {
         Self {
             _private: (),
