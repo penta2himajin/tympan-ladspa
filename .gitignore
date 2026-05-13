@@ -1,0 +1,13 @@
+/target
+**/*.rs.bk
+Cargo.lock
+
+# Linux build artifacts
+*.so
+*.so.*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
