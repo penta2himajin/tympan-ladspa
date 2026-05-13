@@ -68,12 +68,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends ladspa-sdk sox
       - name: Build example cdylibs
-        run: cargo build --release -p tympan-gain -p tympan-noise-gate
+        run: cargo build --release -p tympan-gain -p tympan-noise-gate -p tympan-delay
       - name: ladspa_descriptor symbol exported by every example
         run: |
           set -euo pipefail
           for so in target/release/libtympan_gain.so \
-                    target/release/libtympan_noise_gate.so; do
+                    target/release/libtympan_noise_gate.so \
+                    target/release/libtympan_delay.so; do
             echo "checking $so"
             nm -D --defined-only "$so" | grep -E ' T ladspa_descriptor$'
           done
@@ -148,4 +149,51 @@ jobs:
           python3 - <<PY
           peak = float("$PEAK_QUIET")
           assert peak == 0.0, f"expected silence (gate closed throughout), got {peak}"
+          PY
+      - name: analyseplugin reads delay descriptor
+        env:
+          LADSPA_PATH: ${{ github.workspace }}/target/release
+        run: |
+          set -euo pipefail
+          analyseplugin libtympan_delay.so | tee analyse_delay.txt
+          grep -q 'Plugin Name: "Tympan Feedback Delay"' analyse_delay.txt
+          grep -q 'Plugin Label: "tympan_delay"' analyse_delay.txt
+          grep -q 'Plugin Unique ID: 34567' analyse_delay.txt
+          grep -q 'Has run_adding() Function: No' analyse_delay.txt
+          # All three control ports — bounds and defaults round-trip.
+          grep -qE '"Delay \(ms\)" input, control, 0 to 2000, default 100' analyse_delay.txt
+          grep -qE '"Feedback" input, control, 0 to 0.95' analyse_delay.txt
+          grep -qE '"Mix" input, control, 0 to 1' analyse_delay.txt
+      - name: applyplugin drives the delay lifecycle on a WAV
+        env:
+          LADSPA_PATH: ${{ github.workspace }}/target/release
+        run: |
+          set -euo pipefail
+          # 10 ms click then 200 ms silence, mono 48 kHz.
+          sox -n -r 48000 -c 1 -b 16 click.wav synth 0.01 sine 1000 vol 0.5 pad 0 0.2
+          # delay=50 ms, feedback=0, mix=1 (pure delayed signal).
+          applyplugin click.wav out_delay.wav libtympan_delay.so \
+            tympan_delay 50.0 0.0 1.0 | tee apply_delay.log
+          # Output should preserve the input peak (mix=1, feedback=0
+          # is a passthrough delay). Length and encoding preserved.
+          PEAK=$(grep -oE 'Peak output: [0-9.]+' apply_delay.log | awk '{print $NF}')
+          python3 - <<PY
+          peak = float("$PEAK")
+          assert 0.45 <= peak <= 0.55, f"expected ~0.5 (input peak, delayed but not attenuated), got {peak}"
+          PY
+          test "$(soxi -s click.wav)" = "$(soxi -s out_delay.wav)"
+          # And confirm silence-in, silence-out for a fully-silent
+          # buffer — exercises the buffer-overflow path of apply_delay.
+          sox -n -r 48000 -c 1 -b 16 silent.wav synth 0.05 sine 440 vol 0.0
+          applyplugin silent.wav out_silent.wav libtympan_delay.so \
+            tympan_delay 50.0 0.5 0.5 | tee apply_silent.log
+          PEAK_SILENT=$(grep -oE 'Peak output: [-0-9.e]+' apply_silent.log | awk '{print $NF}')
+          python3 - <<PY
+          peak = float("$PEAK_SILENT")
+          # 16-bit PCM has a 1-LSB quantisation floor at ~1.53e-5
+          # (= 2^-16); a "silent" output round-tripped through
+          # libsndfile lands at or just above that. We assert the
+          # output is below -60 dBFS, two orders of magnitude under
+          # any meaningful signal.
+          assert peak < 1e-3, f"expected ≈ silence through the delay, got {peak}"
           PY

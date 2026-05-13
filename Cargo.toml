@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["examples/gain", "examples/noise-gate"]
+members = ["examples/delay", "examples/gain", "examples/noise-gate"]
 
 [package]
 name = "tympan-ladspa"
