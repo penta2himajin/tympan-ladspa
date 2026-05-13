@@ -56,14 +56,19 @@ jobs:
       - run: cargo test --workspace --all-targets
       - run: cargo test --workspace --doc
 
-  asan:
-    # ADR 0005 Tier 2: surface FFI-boundary UB before it ships. The
-    # framework has substantial unsafe surface (raw FFI shims, the
+  sanitizer:
+    # ADR 0005 Tier 2/3: surface UB and data races before they ship.
+    # The framework has substantial unsafe surface (raw FFI shims,
     # `unsafe impl Sync` on DescriptorBundle, UnsafeCell + MaybeUninit
-    # in the SPSC ring buffer); AddressSanitizer is the highest-
-    # leverage automated check we can run against it.
-    name: cargo test (AddressSanitizer, nightly)
+    # in the SPSC ring buffer). AddressSanitizer covers pointer and
+    # lifetime issues; ThreadSanitizer covers the Acquire/Release
+    # ordering in the SPSC ring buffer's concurrent-exchange test.
+    name: cargo test (${{ matrix.sanitizer }}, nightly)
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        sanitizer: [address, thread]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
@@ -71,19 +76,19 @@ jobs:
           components: rust-src
       - uses: Swatinem/rust-cache@v2
         with:
-          key: asan
-      - name: cargo test --all-targets under ASAN
+          key: sanitizer-${{ matrix.sanitizer }}
+      - name: cargo test --all-targets under ${{ matrix.sanitizer }} sanitizer
         env:
-          RUSTFLAGS: -Zsanitizer=address
-          RUSTDOCFLAGS: -Zsanitizer=address
+          RUSTFLAGS: -Zsanitizer=${{ matrix.sanitizer }}
+          RUSTDOCFLAGS: -Zsanitizer=${{ matrix.sanitizer }}
         run: |
           cargo test --workspace --all-targets \
             --target x86_64-unknown-linux-gnu \
             -Zbuild-std
-      - name: cargo test --doc under ASAN
+      - name: cargo test --doc under ${{ matrix.sanitizer }} sanitizer
         env:
-          RUSTFLAGS: -Zsanitizer=address
-          RUSTDOCFLAGS: -Zsanitizer=address
+          RUSTFLAGS: -Zsanitizer=${{ matrix.sanitizer }}
+          RUSTDOCFLAGS: -Zsanitizer=${{ matrix.sanitizer }}
         run: |
           cargo test --workspace --doc \
             --target x86_64-unknown-linux-gnu \
