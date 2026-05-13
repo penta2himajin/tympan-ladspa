@@ -22,6 +22,26 @@ on the abdomen of pyralid and noctuid moths. Evolved to detect the
 echolocation calls of bats. The name reflects the library's role: a thin
 membrane between the host audio engine and user-space Rust code.
 
+## Development
+
+The project's CI runs `cargo fmt --check`, `cargo clippy --all-targets
+-- -D warnings`, and `cargo test` on every PR (see
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) and
+[ADR 0005](docs/decisions/0005-ci-verification-strategy.md) for the
+tiered verification strategy).
+
+To run the same fmt and clippy checks locally before every `git push`,
+opt into the repository's pre-push hook:
+
+```sh
+git config core.hooksPath .githooks
+```
+
+The hook lives in [`.githooks/pre-push`](.githooks/pre-push). It is a
+no-op when no `*.rs`, `Cargo.toml`, or `Cargo.lock` files changed in
+the pushed range, so documentation-only pushes are not slowed down.
+Bypass it for a single push with `git push --no-verify`.
+
 ## License
 
 Licensed under either of
