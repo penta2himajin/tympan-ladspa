@@ -57,7 +57,7 @@ jobs:
       - run: cargo test --workspace --doc
 
   example:
-    name: gain example (LADSPA SDK)
+    name: examples (LADSPA SDK)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -67,27 +67,44 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends ladspa-sdk sox
-      - name: Build cdylib
-        run: cargo build --release -p tympan-gain
-      - name: ladspa_descriptor symbol is exported
+      - name: Build example cdylibs
+        run: cargo build --release -p tympan-gain -p tympan-noise-gate
+      - name: ladspa_descriptor symbol exported by every example
         run: |
           set -euo pipefail
-          SO=target/release/libtympan_gain.so
-          nm -D --defined-only "$SO" | grep -E ' T ladspa_descriptor$'
-      - name: analyseplugin reads descriptor metadata
+          for so in target/release/libtympan_gain.so \
+                    target/release/libtympan_noise_gate.so; do
+            echo "checking $so"
+            nm -D --defined-only "$so" | grep -E ' T ladspa_descriptor$'
+          done
+      - name: analyseplugin reads gain descriptor
         env:
           LADSPA_PATH: ${{ github.workspace }}/target/release
         run: |
           set -euo pipefail
-          analyseplugin libtympan_gain.so | tee analyse.txt
-          grep -q 'Plugin Name: "Tympan Linear Gain"' analyse.txt
-          grep -q 'Plugin Label: "tympan_gain"' analyse.txt
-          grep -q 'Plugin Unique ID: 12345' analyse.txt
+          analyseplugin libtympan_gain.so | tee analyse_gain.txt
+          grep -q 'Plugin Name: "Tympan Linear Gain"' analyse_gain.txt
+          grep -q 'Plugin Label: "tympan_gain"' analyse_gain.txt
+          grep -q 'Plugin Unique ID: 12345' analyse_gain.txt
           # ADR 0001 — framework intentionally leaves run_adding unset.
-          grep -q 'Has run_adding() Function: No' analyse.txt
+          grep -q 'Has run_adding() Function: No' analyse_gain.txt
           # ADR 0002 — control port bounds and default round-trip.
-          grep -qE '"Gain" input, control, 0 to 4, default 1' analyse.txt
-      - name: applyplugin drives the full LADSPA lifecycle on a WAV
+          grep -qE '"Gain" input, control, 0 to 4, default 1' analyse_gain.txt
+      - name: analyseplugin reads noise-gate descriptor
+        env:
+          LADSPA_PATH: ${{ github.workspace }}/target/release
+        run: |
+          set -euo pipefail
+          analyseplugin libtympan_noise_gate.so | tee analyse_gate.txt
+          grep -q 'Plugin Name: "Tympan Hysteresis Noise Gate"' analyse_gate.txt
+          grep -q 'Plugin Label: "tympan_noise_gate"' analyse_gate.txt
+          grep -q 'Plugin Unique ID: 23456' analyse_gate.txt
+          grep -q 'Has run_adding() Function: No' analyse_gate.txt
+          # The two threshold controls round-trip with their bounds and
+          # symbolic defaults intact.
+          grep -qE '"Open Threshold" input, control, 0 to 1' analyse_gate.txt
+          grep -qE '"Close Threshold" input, control, 0 to 1' analyse_gate.txt
+      - name: applyplugin drives the gain lifecycle on a WAV
         env:
           LADSPA_PATH: ${{ github.workspace }}/target/release
         run: |
@@ -105,3 +122,30 @@ jobs:
           PY
           # Length and encoding preserved.
           test "$(soxi -s input.wav)" = "$(soxi -s output.wav)"
+      - name: applyplugin drives the noise-gate lifecycle on a WAV
+        env:
+          LADSPA_PATH: ${{ github.workspace }}/target/release
+        run: |
+          set -euo pipefail
+          # Loud sine well above both thresholds. The gate latches
+          # open on the first sample over open_threshold and stays
+          # open for the rest of the buffer, so output == input.
+          sox -n -r 48000 -c 1 -b 16 loud.wav synth 0.1 sine 440 vol 0.6
+          applyplugin loud.wav out_loud.wav libtympan_noise_gate.so \
+            tympan_noise_gate 0.4 0.1 | tee apply_loud.log
+          PEAK_IN=$(soxi loud.wav    | grep -oE '\-?[0-9.]+' | head -1 || true)
+          PEAK_OUT=$(grep -oE 'Peak output: [0-9.]+' apply_loud.log | awk '{print $NF}')
+          python3 - <<PY
+          peak_out = float("$PEAK_OUT")
+          assert 0.55 <= peak_out <= 0.65, f"expected loud signal to pass through (~0.6), got {peak_out}"
+          PY
+          # Quiet sine well below close_threshold. Gate never opens →
+          # output is silence.
+          sox -n -r 48000 -c 1 -b 16 quiet.wav synth 0.1 sine 440 vol 0.05
+          applyplugin quiet.wav out_quiet.wav libtympan_noise_gate.so \
+            tympan_noise_gate 0.4 0.1 | tee apply_quiet.log
+          PEAK_QUIET=$(grep -oE 'Peak output: [0-9.]+' apply_quiet.log | awk '{print $NF}')
+          python3 - <<PY
+          peak = float("$PEAK_QUIET")
+          assert peak == 0.0, f"expected silence (gate closed throughout), got {peak}"
+          PY
