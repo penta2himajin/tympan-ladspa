@@ -1,5 +1,7 @@
 # tympan-ladspa
 
+[日本語](./README.ja.md)
+
 A Rust framework for writing LADSPA plugins.
 
 `tympan-ladspa` provides Rust abstractions over the LADSPA (Linux Audio
