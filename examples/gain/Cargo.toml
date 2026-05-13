@@ -8,7 +8,10 @@ description = "Minimal LADSPA gain plugin built on tympan-ladspa"
 publish = false
 
 [lib]
-crate-type = ["cdylib"]
+# `rlib` in addition to `cdylib` so the integration tests under
+# `tests/` can `use tympan_gain::Gain` directly. LADSPA hosts only
+# load the cdylib; the rlib is internal-only.
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 tympan-ladspa = { path = "../.." }
