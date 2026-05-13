@@ -39,5 +39,5 @@ fi
 echo "pre-push: cargo fmt --all -- --check"
 cargo fmt --all -- --check
 
-echo "pre-push: cargo clippy --all-targets --all-features -- -D warnings"
-cargo clippy --all-targets --all-features -- -D warnings
+echo "pre-push: cargo clippy --workspace --all-targets --all-features -- -D warnings"
+cargo clippy --workspace --all-targets --all-features -- -D warnings

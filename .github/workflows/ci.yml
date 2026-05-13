@@ -32,7 +32,7 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   test:
     name: cargo test (${{ matrix.rust }})
@@ -52,6 +52,56 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.rust }}
-      - run: cargo build --all-targets
-      - run: cargo test --all-targets
-      - run: cargo test --doc
+      - run: cargo build --workspace --all-targets
+      - run: cargo test --workspace --all-targets
+      - run: cargo test --workspace --doc
+
+  example:
+    name: gain example (LADSPA SDK)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install ladspa-sdk and sox
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ladspa-sdk sox
+      - name: Build cdylib
+        run: cargo build --release -p tympan-gain
+      - name: ladspa_descriptor symbol is exported
+        run: |
+          set -euo pipefail
+          SO=target/release/libtympan_gain.so
+          nm -D --defined-only "$SO" | grep -E ' T ladspa_descriptor$'
+      - name: analyseplugin reads descriptor metadata
+        env:
+          LADSPA_PATH: ${{ github.workspace }}/target/release
+        run: |
+          set -euo pipefail
+          analyseplugin libtympan_gain.so | tee analyse.txt
+          grep -q 'Plugin Name: "Tympan Linear Gain"' analyse.txt
+          grep -q 'Plugin Label: "tympan_gain"' analyse.txt
+          grep -q 'Plugin Unique ID: 12345' analyse.txt
+          # ADR 0001 — framework intentionally leaves run_adding unset.
+          grep -q 'Has run_adding() Function: No' analyse.txt
+          # ADR 0002 — control port bounds and default round-trip.
+          grep -qE '"Gain" input, control, 0 to 4, default 1' analyse.txt
+      - name: applyplugin drives the full LADSPA lifecycle on a WAV
+        env:
+          LADSPA_PATH: ${{ github.workspace }}/target/release
+        run: |
+          set -euo pipefail
+          sox -n -r 48000 -c 1 -b 16 input.wav synth 0.1 sine 440 vol 0.3
+          applyplugin input.wav output.wav libtympan_gain.so tympan_gain 2.0 \
+            | tee apply.log
+          # The framework's FFI shim drove instantiate → connect_port (×3)
+          # → activate → run → deactivate → cleanup. Numerical check
+          # below confirms the run callback received the right buffers.
+          PEAK=$(grep -oE 'Peak output: [0-9.]+' apply.log | awk '{print $NF}')
+          python3 - <<PY
+          peak = float("$PEAK")
+          assert 0.59 <= peak <= 0.61, f"expected ~0.6 (gain=2.0 * input peak 0.3), got {peak}"
+          PY
+          # Length and encoding preserved.
+          test "$(soxi -s input.wav)" = "$(soxi -s output.wav)"
