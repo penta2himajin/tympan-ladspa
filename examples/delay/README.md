@@ -16,6 +16,9 @@ This crate exists primarily as a worked example that:
   realistic DSP pattern than the gain or noise-gate examples.
 - Factors per-sample processing into a pure `apply_delay` function
   for unit testing without LADSPA machinery.
+- Wires up the framework's `realtime::log::LogSink` so the realtime
+  path can emit diagnostic events (see "Realtime logging" below)
+  without allocating, locking, or blocking.
 
 ## Why not `tympan_ladspa::realtime::ring::SpscRing`?
 
@@ -53,6 +56,44 @@ write           = (write + 1) mod len
 
 `delay_samples = round(delay_ms · 0.001 · sample_rate)`, clamped to
 `buffer.len() − 1`.
+
+## Realtime logging
+
+The plugin defines a small event enum:
+
+```rust
+pub enum DelayLogEvent {
+    FeedbackClamped { requested: f32 },
+}
+```
+
+and owns a `LogSink<DelayLogEvent>` constructed in `instantiate`:
+
+```rust
+let logger = LogSink::new(64, |event| {
+    eprintln!("[tympan-delay] {event:?}");
+});
+```
+
+`Plugin::run` calls `self.logger.log(...)` when the host writes a
+`Feedback` value above the 0.95 safety cap. `LogSink::log` forwards
+to a lock-free SPSC ring buffer's `try_push` — no allocation, no
+syscall, no blocking on the realtime path. A background thread
+spawned by `LogSink::new` drains the queue and runs the user's
+closure (here, `eprintln!`).
+
+When the LADSPA host calls `cleanup`, the framework drops the
+`Delay` instance, which drops the `LogSink`, which signals
+shutdown, flushes any remaining events, and joins the drainer. All
+on the non-realtime cleanup thread.
+
+You can reproduce the log output with `applyplugin`:
+
+```sh
+LADSPA_PATH=$PWD/target/release \
+  applyplugin in.wav out.wav libtympan_delay.so tympan_delay 100.0 0.99 0.5
+# [tympan-delay] FeedbackClamped { requested: 0.99 }
+```
 
 ## Caveats
 
