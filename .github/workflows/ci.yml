@@ -56,6 +56,18 @@ jobs:
       - run: cargo test --workspace --all-targets
       - run: cargo test --workspace --doc
 
+  deny:
+    # ADR 0005 Tier 3 supply-chain hygiene. The framework has zero
+    # non-path dependencies today, so the check is essentially a
+    # regression guard against a future change that adds a crate with
+    # a known advisory, an incompatible licence, a wildcard version
+    # spec, or an unknown source.
+    name: cargo-deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+
   sanitizer:
     # ADR 0005 Tier 2/3: surface UB and data races before they ship.
     # The framework has substantial unsafe surface (raw FFI shims,

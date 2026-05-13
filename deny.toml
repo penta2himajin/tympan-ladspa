@@ -1,0 +1,51 @@
+# cargo-deny configuration.
+#
+# https://embarkstudios.github.io/cargo-deny/
+#
+# This crate ships zero non-path dependencies today, so most of the
+# checks below are effectively no-ops; they exist as a regression
+# guard for the moment someone adds a real `[dependencies]` entry.
+
+[graph]
+# Cover every feature combination — if a future optional dep would
+# pull in a problematic transitive crate, it gets caught.
+all-features = true
+
+[advisories]
+version = 2
+# Yanked crates surface as warnings rather than hard errors so a
+# transient yank does not block merges; vulnerabilities and
+# unmaintained-warning advisories are always errors in v2.
+yanked = "warn"
+
+[licenses]
+version = 2
+# Standard permissive set — comfortable with the licences that
+# pervade the Rust ecosystem and that are compatible with the
+# crate's own MIT OR Apache-2.0 dual licence.
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "0BSD",
+    "CC0-1.0",
+    "ISC",
+    "MIT",
+    "MIT-0",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "Zlib",
+]
+confidence-threshold = 0.93
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+highlight = "all"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
