@@ -1,0 +1,119 @@
+# Release workflow — publishes `tympan-ladspa` to crates.io.
+#
+# Trigger: a `v*.*.*` tag pushed to the repository. The tag's
+# numeric portion must match the framework crate's
+# `Cargo.toml#package.version`; a mismatch fails the preflight step
+# below before any side effects run.
+#
+# Authentication: crates.io Trusted Publishing (OIDC). The
+# `rust-lang/crates-io-auth-action@v1` step exchanges this
+# workflow's GitHub-issued OIDC ID token for a short-lived
+# (~15 min) crates.io access token, scoped to a single publish.
+# The token is auto-revoked when the job ends, so no long-lived
+# API token is stored as a GitHub secret.
+#
+# One-time setup (per crate, before the first release):
+#
+#   1. Log in to https://crates.io
+#   2. Account Settings → Trusted Publishers → Add
+#   3. Set:
+#        Repository owner       penta2himajin
+#        Repository name        tympan-ladspa
+#        Workflow filename      release.yml
+#        Environment            (leave blank)
+#   4. This creates a "pending publisher". On the first
+#      `cargo publish` from this workflow, crates.io claims the
+#      crate name and binds the publisher to it. No further UI
+#      steps are required for subsequent releases.
+#
+# Release procedure:
+#
+#   1. Update `Cargo.toml#package.version` and commit on a branch.
+#   2. Merge the bump PR to `main`.
+#   3. From a clean `main` checkout:
+#        git tag vX.Y.Z
+#        git push origin vX.Y.Z
+#   4. This workflow fires; on success the new version is live on
+#      crates.io.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: read
+  # Required for the OIDC token exchange with crates.io. Scoped to
+  # this workflow only; no other workflows in this repo request an
+  # ID token.
+  id-token: write
+
+concurrency:
+  # Serialise releases — two simultaneous `cargo publish` runs from
+  # the same crate would race and the loser would fail with
+  # `crate already uploaded`. The release tag is the natural lock
+  # key.
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: short
+
+jobs:
+  publish:
+    name: Publish tympan-ladspa to crates.io
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release
+
+      - name: Verify tag matches Cargo.toml version
+        # The release tag's numeric portion (`v0.1.0` → `0.1.0`)
+        # must equal the framework crate's manifest version. A
+        # mismatch is almost always either a missing version bump
+        # or a typo in the tag, and either way the release should
+        # not proceed.
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF#refs/tags/v}"
+          VERSION=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name=="tympan-ladspa") | .version')
+          if [ "$TAG" != "$VERSION" ]; then
+            echo "::error::tag v$TAG does not match Cargo.toml version $VERSION"
+            exit 1
+          fi
+          echo "Releasing tympan-ladspa $VERSION"
+
+      - name: cargo publish --dry-run
+        # Exercises the full publish path (manifest validation,
+        # `.crate` packaging, dependency resolution against
+        # crates.io's index) without uploading. If this fails the
+        # real publish would fail too, and failing here costs
+        # nothing.
+        run: cargo publish -p tympan-ladspa --dry-run
+
+      - name: Obtain crates.io access token via Trusted Publishing
+        id: auth
+        uses: rust-lang/crates-io-auth-action@v1
+
+      - name: cargo publish
+        env:
+          # The action's output is a short-lived crates.io token;
+          # cargo reads it from this environment variable. The
+          # token is automatically revoked at end-of-job by the
+          # action's post step.
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: cargo publish -p tympan-ladspa

@@ -4,12 +4,13 @@ members = ["examples/delay", "examples/gain", "examples/noise-gate"]
 
 [package]
 name = "tympan-ladspa"
-version = "0.0.0"
+version = "0.1.0"
 edition = "2021"
 rust-version = "1.75"
 license = "MIT OR Apache-2.0"
 description = "A safe Rust framework for writing LADSPA plugins"
 repository = "https://github.com/penta2himajin/tympan-ladspa"
+documentation = "https://docs.rs/tympan-ladspa"
 readme = "README.md"
 keywords = ["ladspa", "audio", "plugin", "dsp", "pipewire"]
 categories = ["multimedia::audio", "api-bindings"]
