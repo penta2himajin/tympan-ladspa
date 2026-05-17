@@ -12,19 +12,59 @@
 # The token is auto-revoked when the job ends, so no long-lived
 # API token is stored as a GitHub secret.
 #
-# One-time setup (per crate, before the first release):
+# One-time setup (before the first release):
 #
-#   1. Log in to https://crates.io
-#   2. Account Settings → Trusted Publishers → Add
-#   3. Set:
-#        Repository owner       penta2himajin
-#        Repository name        tympan-ladspa
-#        Workflow filename      release.yml
-#        Environment            (leave blank)
-#   4. This creates a "pending publisher". On the first
-#      `cargo publish` from this workflow, crates.io claims the
-#      crate name and binds the publisher to it. No further UI
-#      steps are required for subsequent releases.
+# crates.io does not yet support "pending publishers" — a Trusted
+# Publisher configuration can only be attached to a crate that
+# already exists. Per RFC 3691 (§ Guide-level explanation):
+# "A Trusted Publisher Configuration can only be created after an
+# initial manual publishing of a crate." The very first release
+# therefore needs a manual `cargo publish` with an API token;
+# subsequent releases are what this workflow automates.
+#
+#   1. crates.io → Account Settings → API Tokens → New Token
+#        Name:    something descriptive ("tympan-ladspa bootstrap")
+#        Scopes:  publish-new (least privilege)
+#        Expiry:  short — e.g. 1 day. The token is single-use here.
+#
+#   2. From a clean `main` checkout, publish v0.1.0 locally:
+#
+#        CARGO_REGISTRY_TOKEN='cio_xxxxx...' \
+#            cargo publish -p tympan-ladspa
+#
+#      The env-var form is preferred over `cargo login`: it leaves
+#      no trace in shell history or `~/.cargo/credentials.toml`.
+#
+#   3. Once the crate exists on crates.io, configure the Trusted
+#      Publisher:
+#
+#        https://crates.io/crates/tympan-ladspa/settings
+#        → Trusted Publishers section → Add
+#
+#      Fields:
+#        Repository owner    penta2himajin
+#        Repository name     tympan-ladspa
+#        Workflow filename   release.yml
+#        Environment         (leave blank)
+#
+#      Only direct crate owners can access this page. If you are a
+#      member of an owner team but not listed as an individual owner,
+#      see rust-lang/crates.io#12710 for the current workaround.
+#
+#   4. Revoke the bootstrap API token from
+#      crates.io → Account Settings → API Tokens → (token) → Revoke.
+#      The workflow below authenticates via OIDC from this point on;
+#      no long-lived token is needed.
+#
+#   5. Subsequent releases (v0.2.0 and beyond) only need a tag push —
+#      see "Release procedure" below.
+#
+# Note: do not push a `v0.1.0` tag *after* the manual first publish.
+# This workflow's preflight would pass, the dry-run would pass, and
+# the real publish would then fail with `crate version `0.1.0`
+# already uploaded`. Either start tagging from `v0.2.0`, or push
+# `v0.1.0` only for git-history purposes while accepting that the
+# `cargo publish` step will fail harmlessly.
 #
 # Release procedure:
 #
