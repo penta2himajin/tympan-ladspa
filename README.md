@@ -93,7 +93,7 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-tympan-ladspa = { git = "https://github.com/penta2himajin/tympan-ladspa" }
+tympan-ladspa = "0.1"
 ```
 
 ```rust
