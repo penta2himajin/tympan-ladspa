@@ -149,7 +149,7 @@ content still count.
 
 | English source | Japanese translation | Status |
 |---|---|---|
-| `README.md` | `README.ja.md` | Placeholder |
+| `README.md` | `README.ja.md` | Translated |
 
 ## Consequences
 
